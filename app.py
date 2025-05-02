@@ -157,7 +157,7 @@ if canvas_result.image_data is not None:
         # st.write(output0)
         certainty, output = torch.max(output0[0], 0)
         certainty = certainty.clone().cpu().item()
-        output = output.clone().cpu().item()
+        output = output.clone().cpu().item()    
         certainty1, output1 = torch.topk(output0[0],3)
         certainty1 = certainty1.clone().cpu()#.item()
         output1 = output1.clone().cpu()#.item()
@@ -165,31 +165,73 @@ if canvas_result.image_data is not None:
     st.write('### Prediction') 
     st.write('### '+str(output))
 
-    st.write('## Breakdown of the prediction process:') 
-
-    st.write('### Image being used as input')
-    st.image(canvas_result.image_data)
-
-    st.write('### Image as a grayscale Numpy array')
-    st.write(input_image_gs_np)
-
-    st.write('### Processing steps:')
-    st.write('1. Find the bounding box of the digit blob and use that.')
-    st.write('2. Convert it to size 22x22.')
-    st.write('3. Pad the image with 3 pixels on all the sides to get a 28x28 image.')
-    st.write('4. Normalize the image to have pixel values between 0 and 1.')
-    st.write('5. Standardize the image using the mean and standard deviation of the MNIST training dataset.')
-
-    st.write('### Processed image')
-    st.image('processed_tensor.png')
-
-
-
-    st.write('### Prediction') 
-    st.write(str(output))
     st.write('### Certainty')    
-    st.write(str(certainty1[0].item()*100) +'%')
+    st.write('#### '+str(round(certainty1[0].item()*100,2)) +'%')
     st.write('### Top 3 candidates')
-    st.write(str(output1))
-    st.write('### Certainties')    
-    st.write(str(certainty1*100))
+    top3_100 = ', '.join(f'{round(x, 3)}' for x in output1.tolist())
+    st.write('#### '+str(top3_100))
+    st.write('### Certainties')
+    certainty1_100 = ', '.join(f'{round(x * 100, 1)}%' for x in certainty1.tolist())
+    st.write('#### '+str(certainty1_100))
+
+
+    import csv, datetime, pathlib
+
+    st.divider()                         # horizontal rule
+
+    true_digit = st.number_input(
+        "Enter the correct digit (optional)", min_value=0, max_value=9, step=1, key="truth"
+    )
+
+    if st.button("Submit example"):
+        ts = datetime.datetime.utcnow().isoformat(timespec="seconds")
+        log_path = pathlib.Path("inference_log.csv")
+        file_exists = log_path.exists()
+
+        with log_path.open("a", newline="") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["timestamp", "pred", "truth", "confidence"])
+            writer.writerow([ts, int(output), int(true_digit), round(certainty*100, 2)])
+
+        st.success("Example recorded!")
+
+
+    # Record the history and show a live chart:
+    import pandas as pd
+    import altair as alt
+
+    log_path = pathlib.Path("inference_log.csv")
+    if log_path.exists():
+        df = pd.read_csv(log_path)
+
+        # 1️⃣  recent table
+        st.markdown("#### Recent submissions")
+        st.dataframe(df.tail(20).iloc[::-1], use_container_width=True)
+
+        # 2️⃣  running accuracy
+        if "truth" in df.columns:
+            df["correct"] = df["pred"] == df["truth"]
+            run_acc = df["correct"].mean() * 100
+            st.metric("Running accuracy", f"{run_acc:.1f}%")
+
+        # 3️⃣  confidence bar chart
+        st.markdown("#### Confidence history")
+        chart = (
+            alt.Chart(df.reset_index())
+            .mark_bar()
+            .encode(
+                x=alt.X("index:O", title="Example #"),
+                y=alt.Y("confidence:Q", title="Confidence (%)", scale=alt.Scale(domain=[0, 100])),
+                color=alt.condition(
+                    alt.datum.pred == alt.datum.truth,
+                    alt.value("#4caf50"),       # green if correct
+                    alt.value("#f44336")        # red if wrong
+                ),
+                tooltip=["timestamp", "pred", "truth", "confidence"]
+            )
+            .properties(height=200)
+        )
+        st.altair_chart(chart, use_container_width=True)
+    else:
+        st.info("No submissions logged yet. Submit a few examples to see history.")

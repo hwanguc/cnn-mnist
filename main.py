@@ -94,6 +94,18 @@ new_cv_x, new_cv_y = transform_shape(cv_data)
 
 # Modelling:
 
+### Make device agnostic code
+def default_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")           # use "cuda:0" for a specific GPU
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+device = default_device()
+
+
 ## CNN Model definition:
 
 def cnn_model():
@@ -119,21 +131,7 @@ def cnn_model():
             )
     return model
 
-summary(cnn_model(), (1, 28, 28))
-
-
 ## Model dry run:
-
-### Make device agnostic code
-def default_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")           # use "cuda:0" for a specific GPU
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
-device = default_device()
 
 ### Pass some data through the model:
 
@@ -142,6 +140,8 @@ model = cnn_model()
 
 #### Ensure the model is on the correct device
 model = model.to(device)
+
+summary(model, (1, 28, 28), device = device.type)
 
 #### Make predictions
 untrained_preds = model(new_cv_x[:5].unsqueeze(dim = 1).to(device))
@@ -267,7 +267,7 @@ def train_model(my_model, epoch_nums, optimizer, loss, data_loader, new_cv_x, ne
         cv_precision.reset()
         cv_recall.reset()
 
-train_model(model, 10, optimizer, loss, data_loader, new_cv_x, new_cv_y)
+train_model(model, 20, optimizer, loss, data_loader, new_cv_x, new_cv_y)
 
 
 # Test the model:
@@ -299,8 +299,9 @@ print(f"recall    : {test_recall.compute():.4f}")
 
 
 # Save model weights to check point:
+ckpt_path_gpu = "./checkpoint/250502_mnist_cnn_pt1_gpu.pt"
 ckpt_path_mps = "./checkpoint/250501_mnist_cnn_pt1_mps.pt"
 ckpt_path_cpu = "./checkpoint/250501_mnist_cnn_pt1_cpu.pt"
-torch.save(model.to(device).state_dict(), ckpt_path_mps) # Save the model weights to its onriginal device (MPS in my case).
+torch.save(model.to(device).state_dict(), ckpt_path_gpu) # Save the model weights to its onriginal device (MPS in my case).
 torch.save(model.to("cpu").state_dict(), ckpt_path_cpu) # Save the model weights to CPU so it's device agnostic.
-print(f"\n Weights saved to {ckpt_path_mps} and {ckpt_path_cpu}.\n")
+print(f"\n Weights saved to {ckpt_path_gpu} and {ckpt_path_cpu}.\n")
