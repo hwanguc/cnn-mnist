@@ -1,3 +1,7 @@
+# ---------------------------------------------
+# MNIST handwritten digit recognition with PyTorch
+# ---------------------------------------------
+
 # Author: Han Wang
 # Date: 2025-05-01
 # Description: This script contains an implementation of a CNN for image classification using PyTorch. The model is trained on the MNIST dataset.
