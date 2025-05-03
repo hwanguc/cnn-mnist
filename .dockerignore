@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+checkpoints/
+inference_log.csv
+.env

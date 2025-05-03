@@ -1,0 +1,24 @@
+services:
+  web:
+    build: .
+    container_name: mnist-web
+    ports: ["8501:8501"]            # host:container
+    env_file: .env                  # loads DB_HOST, DB_USER, ...
+    depends_on: [db]
+    volumes:
+      - checkpoints:/app/checkpoint           # optional read-only mount
+
+  db:
+    image: postgres:16
+    container_name: mnist-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:   ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+  checkpoints:
