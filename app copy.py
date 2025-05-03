@@ -128,36 +128,30 @@ if canvas_result.image_data is not None:
     ## Compute the predictions
     device='cpu'
     with torch.no_grad():
-        # ------------------------------------------------------------------
-        # input tensor shape must be (1, 1, 28, 28)
-        # cnn_model already ends with Softmax → output0 is a prob-vector
-        # ------------------------------------------------------------------
+        # input image for network should be (1,1,28,28)
         output0 = Network(torch.unsqueeze(tensor_image, dim=0).to(device=device))
-
-        # top-1
+        # Need to apply Softmax here to get probabilities
+        m = torch.nn.Softmax(dim=1)
+        output0 = m(output0)
+        # st.write(output0)
         certainty, output = torch.max(output0[0], 0)
-        certainty = certainty.clone().cpu().item()       # e.g. 0.97
-        output    = output.clone().cpu().item()          # e.g. 3
+        certainty = certainty.clone().cpu().item()
+        output = output.clone().cpu().item()    
+        certainty1, output1 = torch.topk(output0[0],3)
+        certainty1 = certainty1.clone().cpu()#.item()
+        output1 = output1.clone().cpu()#.item()
+#     print(certainty)
+    st.write('### Prediction') 
+    st.write('### '+str(output))
 
-        # top-3
-        certainty1, output1 = torch.topk(output0[0], 3)  # probs & indices
-        certainty1 = certainty1.clone().cpu()            # tensor, keep name
-        output1    = output1.clone().cpu()
-
-    # ---------- display (unchanged labels & rounding) ----------------------
-    st.write('### Prediction')
-    st.write('### ' + str(output))
-
-    st.write('### Certainty')
-    st.write(f'#### {certainty*100:.2f}%')
-
+    st.write('### Certainty')    
+    st.write('#### '+str(round(certainty1[0].item()*100,2)) +'%')
     st.write('### Top 3 candidates')
     top3_100 = ', '.join(f'{round(x, 3)}' for x in output1.tolist())
-    st.write('#### ' + str(top3_100))
-
-    st.write('### Top 3 certainties')
-    certainty1_100 = ', '.join(f'{x*100:.2f}%' for x in certainty1.tolist())
-    st.write('#### ' + certainty1_100)
+    st.write('#### '+str(top3_100))
+    st.write('### Certainties')
+    certainty1_100 = ', '.join(f'{round(x * 100, 1)}%' for x in certainty1.tolist())
+    st.write('#### '+str(certainty1_100))
 
     ## Record the click to submit the ground truth to both the postgresql database and a local csv backup.
 
@@ -217,14 +211,14 @@ if canvas_result.image_data is not None:
         ts  = datetime.datetime.utcnow()
         row = (ts, int(output), int(true_digit), round(certainty*100, 2))
 
-        # PostgreSQL
+        # → PostgreSQL
         with conn, conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO inference_log (ts, pred, truth, confidence) "
                 "VALUES (%s, %s, %s, %s)", row
             )
 
-        # CSV backup
+        # → CSV backup
         csv_path = pathlib.Path(img_save_path) / "inference_log.csv"
         write_header = not csv_path.exists()
         with csv_path.open("a", newline="") as f:
