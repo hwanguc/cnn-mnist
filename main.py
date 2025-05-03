@@ -25,7 +25,7 @@ from torch.nn.functional import one_hot
 from torchsummary import summary
 from torchmetrics.classification import Accuracy, Precision, Recall
 
-%matplotlib inline
+#%matplotlib inline
 np.random.seed(1)
 
 # Load the MNIST dataset
