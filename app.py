@@ -9,6 +9,7 @@
 
 from streamlit_drawable_canvas import st_canvas
 import os
+
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,7 +38,7 @@ def cnn_model():
         nn.Softmax(dim=1)           # you used Softmax when training
     )
 
-st.write('# MNIST Digit Recognition')
+st.write('# MNIST Digit Recogniser')
 st.write('## Using a `PyTorch` CNN')
 
 Network = cnn_model()                                            # build layers
@@ -152,65 +153,98 @@ if canvas_result.image_data is not None:
     certainty1_100 = ', '.join(f'{round(x * 100, 1)}%' for x in certainty1.tolist())
     st.write('#### '+str(certainty1_100))
 
-    ### Record the ground truth by user feedback:
-    import csv, datetime, pathlib
-    st.divider()                         # horizontal rule
+    ## Record the click to submit the ground truth to both the postgresql database and a local csv backup.
 
-    true_digit = st.number_input(
-        "Record correct digit", min_value=0, max_value=9, step=1,
-        key="truth"              # keep the key
-    )
+    ### a helper func to connect to sql server:
+    import datetime, csv, pathlib, pandas as pd, altair as alt, psycopg2
+    from dotenv import load_dotenv
+    load_dotenv()                                     # makes .env vars visible
+
+    @st.cache_resource
+    def get_conn():
+        conn = psycopg2.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            port=os.getenv("DB_PORT", "5432"),
+            dbname=os.getenv("DB_NAME", "mnist"),
+            user=os.getenv("DB_USER", "postgresmnist"),
+            password=os.getenv("DB_PASS", "evbxg361"),
+        )
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS inference_log (
+                    id SERIAL PRIMARY KEY,
+                    ts TIMESTAMPTZ,
+                    pred INT,
+                    truth INT,
+                    confidence REAL
+                );
+            """)
+        return conn
+
+    conn = get_conn()
+
+    ### write the user-input ground truth to the server and to csv.
+    st.divider()
+    true_digit = st.number_input("Record correct digit",
+                                min_value=0, max_value=9, step=1, key="truth")
 
     if st.button("Submit example"):
-        ts = datetime.datetime.utcnow().isoformat(timespec="seconds")
-        log_path = pathlib.Path(img_save_path) / "inference_log.csv"
-        file_exists = log_path.exists()
+        ts  = datetime.datetime.utcnow()
+        row = (ts, int(output), int(true_digit), round(certainty*100, 2))
 
-        with log_path.open("a", newline="") as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["timestamp", "pred", "truth", "confidence"])
-            writer.writerow([ts, int(output), int(true_digit), round(certainty*100, 2)])
+        # → PostgreSQL
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO inference_log (ts, pred, truth, confidence) "
+                "VALUES (%s, %s, %s, %s)", row
+            )
 
-        st.success("Example recorded!")
+        # → CSV backup
+        csv_path = pathlib.Path(img_save_path) / "inference_log.csv"
+        write_header = not csv_path.exists()
+        with csv_path.open("a", newline="") as f:
+            w = csv.writer(f)
+            if write_header:
+                w.writerow(["timestamp", "pred", "truth", "confidence"])
+            w.writerow(row)
 
+        st.success("Example recorded to PostgreSQL server and CSV file!")
 
-    ## Record the history and show a live chart:
-    import pandas as pd
-    import altair as alt
+    ### a history chart for the user-input ground truth read from the sql server:
+    df = pd.read_sql(
+        "SELECT ts AS timestamp, pred, truth, confidence "
+        "FROM inference_log ORDER BY id DESC LIMIT 200",  # load a window
+        conn
+    )
 
-    log_path = pathlib.Path(img_save_path) / "inference_log.csv"
-    if log_path.exists():
-        df = pd.read_csv(log_path)
-
-        ### recent table
+    if df.empty:
+        st.info("No submissions logged yet. Submit a few examples to see history.")
+    else:
         st.markdown("#### Recent submissions")
-        st.dataframe(df.tail(20).iloc[::-1], use_container_width=True)
+        st.dataframe(df.head(20), use_container_width=True)
 
-        ### running accuracy
-        if "truth" in df.columns:
-            df["correct"] = df["pred"] == df["truth"]
-            run_acc = df["correct"].mean() * 100
-            st.markdown("#### Running accuracy")      # whatever heading level looks good
-            st.metric(label="(For recent submissions)", value = f"{run_acc:.1f}%")
+        # running accuracy
+        df["correct"] = df["pred"] == df["truth"]
+        run_acc = df["correct"].mean() * 100
+        st.metric("Running accuracy (all)", f"{run_acc:.1f}%")
 
-        ### confidence bar chart
+        # confidence bar chart
         st.markdown("#### Confidence history")
         chart = (
             alt.Chart(df.reset_index())
             .mark_bar()
             .encode(
                 x=alt.X("index:O", title="Example #"),
-                y=alt.Y("confidence:Q", title="Confidence (%)", scale=alt.Scale(domain=[0, 100])),
+                y=alt.Y("confidence:Q", title="Confidence (%)",
+                        scale=alt.Scale(domain=[0, 100])),
                 color=alt.condition(
-                    alt.datum.pred == alt.datum.truth,
-                    alt.value("#4caf50"),       # green if correct
-                    alt.value("#f44336")        # red if wrong
+                    alt.datum.correct,
+                    alt.value("#4caf50"),  # green if correct
+                    alt.value("#f44336")   # red  if wrong
                 ),
                 tooltip=["timestamp", "pred", "truth", "confidence"]
             )
-            .properties(height=200)
+            .properties(height=220)
         )
         st.altair_chart(chart, use_container_width=True)
-    else:
-        st.info("No submissions logged yet. Submit a few examples to see history.")
