@@ -2,7 +2,7 @@
 
 This repository contains a **full-stack**, **end-to-end** deployment of CNN model trained to recognise handwritten digits from the MNIST dataset.
 
-Access the web app at: 🔗 [Live Deployment](https://mnist-decoder.onrender.com)
+Access the web app at: 🔗 [Live Deployment](https://cnn-mnist-handwritting-recogniser.onrender.com)
 
 **Performance metrics (Testing dataset):**
 
